@@ -215,6 +215,17 @@ struct Screen<Content: View>: View {
                 #endif
                 .navigationTitle(title)
                 .safeAreaInset(edge: .top, spacing: 0) { LinkBanner() }
+                .scrollDismissesKeyboard(.immediately)
+                .toolbar {
+                    // The number pad has no return key, so this is the way out of a field.
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Fertig") {
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                            to: nil, from: nil, for: nil)
+                        }
+                    }
+                }
         }
     }
 }
