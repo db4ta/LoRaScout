@@ -6,6 +6,9 @@ iPhone-App für den LoRaWAN Field Tester (M5Stack Core2). Firmware, BLE-Protokol
 
 - Live-Daten per Bluetooth: GPS, LoRaWAN, Gateways, Pakete, Ereignis-Verlauf
 - Steuerung: SEND NOW, Screenwechsel am Gerät, komplette Konfiguration, Neustart
+- Countdown bis zum nächsten Auto-Uplink, LoRaWAN-Status mit TX, RX und Bereit, GPS-Status mit Standby und Aufwachen
+- Stromsparen einzeln einstellbar: Prozessortakt, Helligkeit, Display-Zeit, GNSS-Standby
+- Optionale Signaltöne in App und Tester: 2525 Hz senden, 1750 Hz empfangen, Dreifachgong bei Fehlern
 - Log-Download per BLE, zusammengeführt mit dem Coverage-Log vom ioBroker
 - Karte, Auswertung und Verlauf nach Tag, Monat, Jahr oder gesamt
 - Export als CSV und JPG mit wählbarem Kartenausschnitt
@@ -16,6 +19,10 @@ iPhone-App für den LoRaWAN Field Tester (M5Stack Core2). Firmware, BLE-Protokol
 Xcode 26.5, iOS 26.5 oder neuer. Bluetooth gibt es nicht im Simulator.
 
 Coverage-Abruf nur im lokalen Netz per IP-Adresse, `.local` oder Rechnername. Das Token liegt im iOS-Schlüsselbund.
+
+## Hinweise
+
+TX und RX sind eine Annäherung, das LoRa-Modul meldet sie nicht getrennt. TX umfasst den ganzen Sendevorgang, RX steht für die Wartezeit auf die Netzantwort nach SEND NOW. Signaltöne der App klingen nur im Vordergrund, dafür auch bei stumm geschaltetem iPhone. Sie kommen bis zu etwa 1 s nach dem Tester.
 
 ## Aufbau
 
