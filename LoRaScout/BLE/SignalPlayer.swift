@@ -12,7 +12,7 @@ final class SignalPlayer {
 
     func play(_ kinds: [EventKind]) {
         guard UserDefaults.standard.bool(forKey: Self.enabledKey) else { return }
-        let samples = kinds.flatMap(Self.samples)
+        let samples = kinds.flatMap { Self.samples($0) }
         if !samples.isEmpty { play(samples) }
     }
 
