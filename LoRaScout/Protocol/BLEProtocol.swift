@@ -127,7 +127,7 @@ struct Reply: Equatable {
 
 enum ConfigID: UInt8 {
     case devEUI = 1, joinEUI, appKey, interval, profile, uploadOnBoot, wifiName, wifiPassword, server, uploadToken, displaySave,
-         displayAlways, displayOffSeconds, brightness, cpuMHz, gnssStandby
+         displayAlways, displayOffSeconds, brightness, cpuMHz, gnssStandby, signalTones
 }
 
 struct DeviceConfig: Equatable {
@@ -147,6 +147,7 @@ struct DeviceConfig: Equatable {
     var brightness: UInt8 = 50
     var cpuMHz: UInt8 = 80
     var gnssStandby = false
+    var signalTones = false
 
     func text(_ id: ConfigID) -> String {
         switch id {
@@ -192,6 +193,7 @@ struct DeviceConfig: Equatable {
             case .brightness: config.brightness = value.first ?? 50
             case .cpuMHz: config.cpuMHz = value.first ?? 80
             case .gnssStandby: config.gnssStandby = flag
+            case .signalTones: config.signalTones = flag
             }
         }
         return config

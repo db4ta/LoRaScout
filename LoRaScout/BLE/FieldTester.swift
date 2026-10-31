@@ -43,6 +43,7 @@ final class FieldTester: NSObject {
     private(set) var events: [TesterEvent] = []
     private(set) var toast: TesterEvent?
     private(set) var lastUplink: Date?
+    @ObservationIgnored private let signals = SignalPlayer()
     private(set) var sendRequested = false
     private(set) var lastSendResult: TesterEvent?
     private(set) var savingConfig = false
@@ -286,7 +287,10 @@ final class FieldTester: NSObject {
             lastSendResult = event
         }
         if events.count > Self.maxEvents { events.removeLast(events.count - Self.maxEvents) }
+        signals.play(kinds)
     }
+
+    func previewSignals() { signals.preview() }
 
     private func tick() {
         let now = Date.now
@@ -374,6 +378,7 @@ final class FieldTester: NSObject {
         case .brightness: "Helligkeit"
         case .cpuMHz: "Prozessortakt"
         case .gnssStandby: "GNSS-Standby"
+        case .signalTones: "Signaltöne"
         default: "Wert"
         }
     }

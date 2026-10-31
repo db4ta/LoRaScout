@@ -14,6 +14,8 @@ struct ConfigView: View {
     @State private var brightness: UInt8 = 50
     @State private var cpuMHz: UInt8 = 80
     @State private var gnssStandby = false
+    @State private var signalTones = false
+    @AppStorage(SignalPlayer.enabledKey) private var appSignals = false
     @State private var wifiName = ""
     @State private var wifiPassword = ""
     @State private var server = ""
@@ -47,6 +49,7 @@ struct ConfigView: View {
                                            description: Text("Die Geräte-Einstellungen erscheinen nach dem Verbinden."))
                 }
             }
+            signalSection
             coverageSection
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -69,6 +72,7 @@ struct ConfigView: View {
             Picker("Rückmeldung", selection: $profile) {
                 ForEach(UInt8(0)...3, id: \.self) { Text(EventKind.profileName($0)).tag($0) }
             }
+            Toggle("Signaltöne am Tester", isOn: $signalTones)
             Picker("Display zeigt", selection: screenBinding) {
                 Text("Home").tag(UInt8(0))
                 Text("Gateways").tag(UInt8(1))
@@ -82,7 +86,7 @@ struct ConfigView: View {
             if tester.restartNeeded {
                 Text("LoRaWAN-Schlüssel und Prozessortakt wirken erst nach einem Neustart.").foregroundStyle(.orange)
             } else {
-                Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. „Display zeigt“ wirkt sofort.")
+                Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. „Display zeigt“ wirkt sofort. Signaltöne: hoher Ton beim Senden, tiefer beim Empfang, Dreifachgong bei Fehlern. Sie klingen nur in Profilen mit Ton.")
             }
         }
         Section {
@@ -126,6 +130,17 @@ struct ConfigView: View {
             Text("WLAN und Upload")
         } footer: {
             Text("Der Tester lädt sein Log beim Einschalten zum Server. Upload braucht WLAN-Name, Server und Token.")
+        }
+    }
+
+    private var signalSection: some View {
+        Section {
+            Toggle("Signaltöne in der App", isOn: $appSignals)
+            Button("Töne anhören") { tester.previewSignals() }
+        } header: {
+            Text("App")
+        } footer: {
+            Text("Klingt wie am Tester, auch bei stumm geschaltetem iPhone, und nur solange die App im Vordergrund läuft.")
         }
     }
 
@@ -200,6 +215,7 @@ struct ConfigView: View {
         brightness = config.brightness
         cpuMHz = config.cpuMHz
         gnssStandby = config.gnssStandby
+        signalTones = config.signalTones
         wifiName = config.wifiName
         server = config.server
         wifiPassword = ""
@@ -249,6 +265,7 @@ struct ConfigView: View {
         if brightness != config.brightness { writes.append(.byte(.brightness, brightness)) }
         if cpuMHz != config.cpuMHz { writes.append(.byte(.cpuMHz, cpuMHz)) }
         if gnssStandby != config.gnssStandby { writes.append(.flag(.gnssStandby, gnssStandby)) }
+        if signalTones != config.signalTones { writes.append(.flag(.signalTones, signalTones)) }
         if upload != config.uploadOnBoot { writes.append(.uploadOnBoot(upload)) }
 
         if writes.isEmpty {
