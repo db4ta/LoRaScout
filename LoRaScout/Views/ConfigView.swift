@@ -9,12 +9,21 @@ struct ConfigView: View {
     @State private var profile: UInt8 = 0
     @State private var upload = false
     @State private var displaySave = true
+    @State private var displayAlways = false
+    @State private var displayOffSeconds: UInt8 = 30
+    @State private var brightness: UInt8 = 50
+    @State private var cpuMHz: UInt8 = 80
+    @State private var gnssStandby = false
     @State private var wifiName = ""
     @State private var wifiPassword = ""
     @State private var server = ""
     @State private var token = ""
     @State private var inputError: String?
     @State private var coverageToken = ""
+
+    /// The current value stays selectable even if the portal stored one that isn't on the list.
+    private var brightnessChoices: [UInt8] { Set([10, 25, 50, 75, 100, brightness]).sorted() }
+    private var displayOffChoices: [UInt8] { Set([15, 30, 60, 120, displayOffSeconds]).sorted() }
 
     private func setHint(_ isSet: Bool) -> String { isSet ? "gesetzt, neu eingeben zum Ändern" : "nicht gesetzt" }
 
@@ -57,7 +66,6 @@ struct ConfigView: View {
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
             }
-            Toggle("Display-Sparmodus", isOn: $displaySave)
             Picker("Rückmeldung", selection: $profile) {
                 ForEach(UInt8(0)...3, id: \.self) { Text(EventKind.profileName($0)).tag($0) }
             }
@@ -72,10 +80,30 @@ struct ConfigView: View {
             Text("Gerät")
         } footer: {
             if tester.restartNeeded {
-                Text("Neue LoRaWAN-Schlüssel wirken erst nach einem Neustart.").foregroundStyle(.orange)
+                Text("LoRaWAN-Schlüssel und Prozessortakt wirken erst nach einem Neustart.").foregroundStyle(.orange)
             } else {
-                Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. „Display zeigt“ wirkt sofort. Im Sparmodus geht das Display bei Bluetooth-Verbindung nach 30 s aus, Tippen schaltet es wieder ein.")
+                Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. „Display zeigt“ wirkt sofort.")
             }
+        }
+        Section {
+            Picker("Prozessortakt", selection: $cpuMHz) {
+                ForEach([UInt8(80), 160, 240], id: \.self) { Text("\($0) MHz").tag($0) }
+            }
+            Picker("Helligkeit", selection: $brightness) {
+                ForEach(brightnessChoices, id: \.self) { Text("\($0) %").tag($0) }
+            }
+            Toggle("Display-Sparmodus", isOn: $displaySave)
+            Toggle("Auch ohne Bluetooth", isOn: $displayAlways)
+                .disabled(!displaySave)
+            Picker("Display aus nach", selection: $displayOffSeconds) {
+                ForEach(displayOffChoices, id: \.self) { Text("\($0) s").tag($0) }
+            }
+            .disabled(!displaySave)
+            Toggle("GNSS-Standby", isOn: $gnssStandby)
+        } header: {
+            Text("Stromsparen")
+        } footer: {
+            Text("Der Prozessortakt wirkt nach einem Neustart, alles andere sofort. Im Sparmodus weckt Tippen das Display. GNSS-Standby: Der Empfänger wacht 15 s vor dem nächsten Uplink auf, SEND NOW wartet bis zu 10 s auf die Position. Dazwischen gibt es keine aktuelle Position.")
         }
         Section {
             ForEach(tester.network.credentials) { field in
@@ -167,6 +195,11 @@ struct ConfigView: View {
         profile = config.profile
         upload = config.uploadOnBoot
         displaySave = config.displaySave
+        displayAlways = config.displayAlways
+        displayOffSeconds = config.displayOffSeconds
+        brightness = config.brightness
+        cpuMHz = config.cpuMHz
+        gnssStandby = config.gnssStandby
         wifiName = config.wifiName
         server = config.server
         wifiPassword = ""
@@ -210,7 +243,12 @@ struct ConfigView: View {
             }
             writes.append(.text(id, value))
         }
-        if displaySave != config.displaySave { writes.append(.displaySave(displaySave)) }
+        if displaySave != config.displaySave { writes.append(.flag(.displaySave, displaySave)) }
+        if displayAlways != config.displayAlways { writes.append(.flag(.displayAlways, displayAlways)) }
+        if displayOffSeconds != config.displayOffSeconds { writes.append(.byte(.displayOffSeconds, displayOffSeconds)) }
+        if brightness != config.brightness { writes.append(.byte(.brightness, brightness)) }
+        if cpuMHz != config.cpuMHz { writes.append(.byte(.cpuMHz, cpuMHz)) }
+        if gnssStandby != config.gnssStandby { writes.append(.flag(.gnssStandby, gnssStandby)) }
         if upload != config.uploadOnBoot { writes.append(.uploadOnBoot(upload)) }
 
         if writes.isEmpty {

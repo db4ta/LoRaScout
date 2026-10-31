@@ -154,8 +154,10 @@ enum TesterEvents {
             events.append(.noAnswer)
         }
 
-        if rose(.fix) { events.append(.fixGained) }
-        if fell(.fix) { events.append(.fixLost) }
+        // Standby drops and regains the fix on purpose, every interval.
+        let standby = previous.flags.contains(.gnssStandby) || current.flags.contains(.gnssStandby)
+        if rose(.fix), !standby { events.append(.fixGained) }
+        if fell(.fix), !standby { events.append(.fixLost) }
         if fell(.gnssData) { events.append(.gnssLost) }
         if rose(.gnssData) { events.append(.gnssBack) }
         if fell(.sdReady) { events.append(.sdMissing) }
@@ -210,7 +212,7 @@ enum NextUplink: Equatable {
     /// The firmware sends once the interval has passed since the last uplink of any kind, and only with a fix.
     static func derive(status: DeviceStatus, interval: UInt16?, lastUplink: Date?, now: Date) -> NextUplink {
         guard status.join == .joined else { return .notJoined }
-        guard status.flags.contains(.fix) else { return .noFix }
+        guard status.flags.contains(.fix) || status.flags.contains(.gnssStandby) else { return .noFix }
         guard let interval, let lastUplink else { return .unknown }
         let left = Int((lastUplink.timeIntervalSince(now) + Double(interval)).rounded(.up))
         return left > 0 ? .inSeconds(left) : .due

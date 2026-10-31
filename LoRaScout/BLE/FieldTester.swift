@@ -369,6 +369,11 @@ final class FieldTester: NSObject {
         case .server: "Server"
         case .uploadToken: "Upload-Token"
         case .displaySave: "Display-Sparmodus"
+        case .displayAlways: "Sparmodus ohne Bluetooth"
+        case .displayOffSeconds: "Display aus nach"
+        case .brightness: "Helligkeit"
+        case .cpuMHz: "Prozessortakt"
+        case .gnssStandby: "GNSS-Standby"
         default: "Wert"
         }
     }

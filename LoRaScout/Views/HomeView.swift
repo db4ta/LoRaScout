@@ -5,6 +5,7 @@ struct HomeView: View {
 
     private var gps: (text: String, symbol: String, color: Color) {
         guard let status = tester.status else { return ("Unbekannt", "questionmark.circle.fill", .secondary) }
+        if status.flags.contains(.gnssStandby) { return ("GPS im Standby", "moon.fill", .blue) }
         if status.flags.contains(.fix) { return ("Fix, \(status.sats) Sat.", "location.fill", .green) }
         if status.flags.contains(.gnssData) { return ("Kein Fix", "location.slash.fill", .red) }
         return ("Keine Daten", "exclamationmark.triangle.fill", .red)
