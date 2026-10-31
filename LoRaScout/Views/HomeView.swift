@@ -16,7 +16,15 @@ struct HomeView: View {
 
     private var lora: (text: String, symbol: String, color: Color) {
         switch tester.status?.join {
-        case .joined: ("Angemeldet", "checkmark.circle.fill", .green)
+        case .joined:
+            // The AT firmware doesn't report TX and RX windows, so TX covers the whole send including its RX windows.
+            if tester.status?.flags.contains(.awaitingNetwork) == true {
+                ("Angemeldet\nRX, wartet auf Antwort", "arrow.down.circle.fill", .blue)
+            } else if tester.status?.flags.contains(.loraBusy) == true {
+                ("Angemeldet\nTX, sendet", "antenna.radiowaves.left.and.right", .orange)
+            } else {
+                ("Angemeldet\nBereit", "checkmark.circle.fill", .green)
+            }
         case .joining: ("Join läuft", "arrow.triangle.2.circlepath.circle.fill", .orange)
         case .failed: ("Fehlgeschlagen", "xmark.circle.fill", .red)
         case .idle: ("Nicht angemeldet", "minus.circle.fill", .orange)
