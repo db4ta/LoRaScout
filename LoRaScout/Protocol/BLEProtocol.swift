@@ -125,7 +125,7 @@ struct Reply: Equatable {
 }
 
 enum ConfigID: UInt8 {
-    case devEUI = 1, joinEUI, appKey, interval, profile, uploadOnBoot, wifiName, wifiPassword, server, uploadToken
+    case devEUI = 1, joinEUI, appKey, interval, profile, uploadOnBoot, wifiName, wifiPassword, server, uploadToken, displaySave
 }
 
 struct DeviceConfig: Equatable {
@@ -139,6 +139,7 @@ struct DeviceConfig: Equatable {
     var wifiPasswordSet = false
     var server = ""
     var uploadTokenSet = false
+    var displaySave = true
 
     func text(_ id: ConfigID) -> String {
         switch id {
@@ -178,6 +179,7 @@ struct DeviceConfig: Equatable {
             case .wifiPassword: config.wifiPasswordSet = flag
             case .server: config.server = text
             case .uploadToken: config.uploadTokenSet = flag
+            case .displaySave: config.displaySave = flag
             }
         }
         return config
@@ -197,6 +199,7 @@ struct ConfigWrite: Equatable {
         ConfigWrite(id: .interval, value: Data([UInt8(seconds & 0xFF), UInt8(seconds >> 8)]))
     }
     static func profile(_ profile: UInt8) -> ConfigWrite { ConfigWrite(id: .profile, value: Data([profile])) }
+    static func displaySave(_ on: Bool) -> ConfigWrite { ConfigWrite(id: .displaySave, value: Data([on ? 1 : 0])) }
     static func uploadOnBoot(_ on: Bool) -> ConfigWrite { ConfigWrite(id: .uploadOnBoot, value: Data([on ? 1 : 0])) }
 
     /// Upload "on" needs WiFi name, server and token stored first, so it always goes last.

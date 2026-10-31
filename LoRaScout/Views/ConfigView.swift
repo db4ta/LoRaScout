@@ -8,6 +8,7 @@ struct ConfigView: View {
     @State private var interval = ""
     @State private var profile: UInt8 = 0
     @State private var upload = false
+    @State private var displaySave = true
     @State private var wifiName = ""
     @State private var wifiPassword = ""
     @State private var server = ""
@@ -56,6 +57,7 @@ struct ConfigView: View {
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
             }
+            Toggle("Display-Sparmodus", isOn: $displaySave)
             Picker("Rückmeldung", selection: $profile) {
                 ForEach(UInt8(0)...3, id: \.self) { Text(EventKind.profileName($0)).tag($0) }
             }
@@ -72,7 +74,7 @@ struct ConfigView: View {
             if tester.restartNeeded {
                 Text("Neue LoRaWAN-Schlüssel wirken erst nach einem Neustart.").foregroundStyle(.orange)
             } else {
-                Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. „Display zeigt“ wirkt sofort.")
+                Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. „Display zeigt“ wirkt sofort. Im Sparmodus geht das Display bei Bluetooth-Verbindung nach 30 s aus, Tippen schaltet es wieder ein.")
             }
         }
         Section {
@@ -164,6 +166,7 @@ struct ConfigView: View {
         interval = String(config.interval)
         profile = config.profile
         upload = config.uploadOnBoot
+        displaySave = config.displaySave
         wifiName = config.wifiName
         server = config.server
         wifiPassword = ""
@@ -207,6 +210,7 @@ struct ConfigView: View {
             }
             writes.append(.text(id, value))
         }
+        if displaySave != config.displaySave { writes.append(.displaySave(displaySave)) }
         if upload != config.uploadOnBoot { writes.append(.uploadOnBoot(upload)) }
 
         if writes.isEmpty {

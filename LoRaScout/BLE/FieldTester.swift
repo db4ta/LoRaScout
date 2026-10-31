@@ -368,6 +368,7 @@ final class FieldTester: NSObject {
         case .wifiPassword: "WLAN-Passwort"
         case .server: "Server"
         case .uploadToken: "Upload-Token"
+        case .displaySave: "Display-Sparmodus"
         default: "Wert"
         }
     }
