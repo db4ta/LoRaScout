@@ -5,7 +5,10 @@ struct HomeView: View {
 
     private var gps: (text: String, symbol: String, color: Color) {
         guard let status = tester.status else { return ("Unbekannt", "questionmark.circle.fill", .secondary) }
-        if status.flags.contains(.gnssStandby) { return ("GPS im Standby", "moon.fill", .blue) }
+        if status.flags.contains(.gnssStandby) {
+            return status.flags.contains(.gnssData) ? ("GPS wacht auf", "location.circle", .orange)
+                                                    : ("GPS im Standby", "moon.fill", .blue)
+        }
         if status.flags.contains(.fix) { return ("Fix, \(status.sats) Sat.", "location.fill", .green) }
         if status.flags.contains(.gnssData) { return ("Kein Fix", "location.slash.fill", .red) }
         return ("Keine Daten", "exclamationmark.triangle.fill", .red)
@@ -109,10 +112,14 @@ private struct DeviceCard: View {
     var status: DeviceStatus
 
     var body: some View {
-        let next = NextUplink.derive(status: status, interval: tester.config?.interval,
-                                     lastUplink: tester.lastUplink, now: .now)
         Card {
-            LabeledContent("Nächster Auto-Uplink", value: next.text)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let next = NextUplink.derive(status: status, interval: tester.config?.interval,
+                                             lastUplink: tester.lastUplink, now: context.date)
+                LabeledContent("Nächster Auto-Uplink") {
+                    Text(next.text).monospacedDigit()
+                }
+            }
             LabeledContent("Rückmeldung am Tester", value: EventKind.profileName(status.profile))
             if !status.flags.contains(.sdReady) {
                 StatusLabel(text: "SD-Karte fehlt, es wird nichts protokolliert.",

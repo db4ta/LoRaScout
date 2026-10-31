@@ -158,8 +158,8 @@ enum TesterEvents {
         let standby = previous.flags.contains(.gnssStandby) || current.flags.contains(.gnssStandby)
         if rose(.fix), !standby { events.append(.fixGained) }
         if fell(.fix), !standby { events.append(.fixLost) }
-        if fell(.gnssData) { events.append(.gnssLost) }
-        if rose(.gnssData) { events.append(.gnssBack) }
+        if fell(.gnssData), !standby { events.append(.gnssLost) }
+        if rose(.gnssData), !standby { events.append(.gnssBack) }
         if fell(.sdReady) { events.append(.sdMissing) }
         if rose(.sdReady) { events.append(.sdReady) }
         if previous.profile != current.profile {
@@ -224,7 +224,7 @@ enum NextUplink: Equatable {
         case .noFix: "Pausiert, bis das GPS einen Fix hat"
         case .unknown: "Zeitpunkt nach dem nächsten Uplink bekannt"
         case .due: "Jetzt fällig"
-        case .inSeconds(let s): s >= 60 ? "In etwa \(s / 60) min \(s % 60) s" : "In etwa \(s) s"
+        case .inSeconds(let s): String(format: "%d:%02d", s / 60, s % 60)
         }
     }
 }
