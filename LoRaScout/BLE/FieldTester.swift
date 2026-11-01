@@ -373,7 +373,7 @@ final class FieldTester: NSObject {
         case .server: "Server"
         case .uploadToken: "Upload-Token"
         case .displaySave: "Display-Sparmodus"
-        case .displayAlways: "Sparmodus ohne Bluetooth"
+        case .displayAlways: "Display ohne iPhone ausschalten"
         case .displayOffSeconds: "Display aus nach"
         case .brightness: "Helligkeit"
         case .cpuMHz: "Prozessortakt"

@@ -261,12 +261,18 @@ struct CoverageView: View {
     private var exports: some View {
         Section("Exportieren") {
             if !coverage.selected.rows.isEmpty {
-                ShareLink("Zeitraum als CSV", item: coverage.selectionURL)
+                ShareLink("Zeitraum als CSV", item: DatedCSV(source: coverage.selectionURL, name: "Zeitraum-\(coverage.period.slug)"),
+                          preview: SharePreview("Zeitraum als CSV"))
             }
             Button("Zeitraum als JPG", systemImage: "photo") { choosingExport = true }
                 .disabled(MapContent(coverage: coverage).points.isEmpty)
             if !tester.logRows.isEmpty {
-                ShareLink("Rohes Tester-Log (CSV)", item: tester.logURL)
+                ShareLink("Rohes Tester-Log (CSV)", item: DatedCSV(source: tester.logURL, name: "Tester-Log"),
+                          preview: SharePreview("Rohes Tester-Log"))
+            }
+            if coverage.hasCoverage {
+                ShareLink("Rohes Server-Log (CSV)", item: DatedCSV(source: coverage.coverageURL, name: "Server-Log"),
+                          preview: SharePreview("Rohes Server-Log"))
             }
         }
     }

@@ -31,7 +31,7 @@ final class CoverageStore {
     var selectionURL: URL { URL.temporaryDirectory.appending(path: "LoRaScout-\(period.slug).csv") }
     var archive: Archive { book?.archive ?? Archive() }
 
-    @ObservationIgnored private let coverageURL = URL.documentsDirectory.appending(path: "coverage.csv")
+    let coverageURL = URL.documentsDirectory.appending(path: "coverage.csv")
     @ObservationIgnored private var coverage = Data()
     @ObservationIgnored private var device = Data()
 

@@ -96,8 +96,8 @@ struct ConfigView: View {
             Picker("Helligkeit", selection: $brightness) {
                 ForEach(brightnessChoices, id: \.self) { Text("\($0) %").tag($0) }
             }
-            Toggle("Display-Sparmodus", isOn: $displaySave)
-            Toggle("Auch ohne Bluetooth", isOn: $displayAlways)
+            Toggle("Display dauerhaft an", isOn: Binding(get: { !displaySave }, set: { displaySave = !$0 }))
+            Toggle("Auch ohne iPhone ausschalten", isOn: $displayAlways)
                 .disabled(!displaySave)
             Picker("Display aus nach", selection: $displayOffSeconds) {
                 ForEach(displayOffChoices, id: \.self) { Text("\($0) s").tag($0) }
@@ -107,7 +107,7 @@ struct ConfigView: View {
         } header: {
             Text("Stromsparen")
         } footer: {
-            Text("Der Prozessortakt wirkt nach einem Neustart, alles andere sofort. Im Sparmodus weckt Tippen das Display. GNSS-Standby: Der Empfänger wacht 15 s vor dem nächsten Uplink auf, SEND NOW wartet bis zu 10 s auf die Position. Dazwischen gibt es keine aktuelle Position.")
+            Text("Der Prozessortakt wirkt nach einem Neustart, alles andere sofort. Das Display geht nach der eingestellten Zeit aus, wenn das iPhone verbunden ist. Ohne iPhone nur mit „Auch ohne iPhone ausschalten“. Tippen weckt es. GNSS-Standby: Der Empfänger wacht 15 s vor dem nächsten Uplink auf, SEND NOW wartet bis zu 10 s auf die Position. Dazwischen gibt es keine aktuelle Position.")
         }
         Section {
             ForEach(tester.network.credentials) { field in

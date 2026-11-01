@@ -73,9 +73,7 @@ enum MapImage {
         }
 
         guard let data = image.jpegData(compressionQuality: 0.9) else { throw CocoaError(.fileWriteUnknown) }
-        let day = Date.now.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
-        let name = "LoRaScout-Karte-\(day).jpg"
-        let url = URL.temporaryDirectory.appending(path: name)
+        let url = URL.temporaryDirectory.appending(path: "\(DatedCSV.stamp())_Karte.jpg")
         try data.write(to: url, options: .atomic)
         return url
     }
