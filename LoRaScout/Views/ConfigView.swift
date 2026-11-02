@@ -16,6 +16,7 @@ struct ConfigView: View {
     @State private var gnssStandby = false
     @State private var signalTones = false
     @AppStorage(SignalPlayer.enabledKey) private var appSignals = false
+    @AppStorage("phoneScreenAwake") private var phoneScreenAwake = false
     @State private var wifiName = ""
     @State private var wifiPassword = ""
     @State private var server = ""
@@ -137,10 +138,11 @@ struct ConfigView: View {
         Section {
             Toggle("Signaltöne in der App", isOn: $appSignals)
             Button("Töne anhören") { tester.previewSignals() }
+            Toggle("iPhone-Display bleibt an", isOn: $phoneScreenAwake)
         } header: {
             Text("App")
         } footer: {
-            Text("Klingt wie am Tester, auch bei stumm geschaltetem iPhone, und nur solange die App im Vordergrund läuft.")
+            Text("Töne klingen wie am Tester, auch bei stumm geschaltetem iPhone, und nur solange die App im Vordergrund läuft. „iPhone-Display bleibt an“ verhindert die automatische Sperre, solange die App offen ist. Braucht mehr Akku.")
         }
     }
 

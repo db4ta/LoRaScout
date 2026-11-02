@@ -11,6 +11,7 @@ struct ContentView: View {
     @Environment(FieldTester.self) private var tester
     @Environment(CoverageStore.self) private var coverage
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("phoneScreenAwake") private var phoneScreenAwake = false
     @State private var tab = 0
 
     var body: some View {
@@ -36,6 +37,10 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { coverage.reloadArchive() }
+            UIApplication.shared.isIdleTimerDisabled = phoneScreenAwake && phase == .active
+        }
+        .onChange(of: phoneScreenAwake, initial: true) { _, awake in
+            UIApplication.shared.isIdleTimerDisabled = awake
         }
         .onChange(of: tester.logRows, initial: true) { coverage.update(device: tester.logData) }
         .onChange(of: tester.config?.server, initial: true) { _, server in
