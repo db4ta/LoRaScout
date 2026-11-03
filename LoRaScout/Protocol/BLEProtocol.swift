@@ -109,7 +109,8 @@ enum ControlCommand: Equatable {
     }
 }
 
-enum ReplyStatus: UInt8 { case ok, invalid, busy, noCard, savedNeedsRestart }
+/// `unknown` stands for any code this app doesn't know, so a rejection never gets lost.
+enum ReplyStatus: UInt8 { case ok, invalid, busy, noCard, savedNeedsRestart, unknown = 0xFF }
 
 struct Reply: Equatable {
     var op: UInt8
@@ -120,8 +121,8 @@ struct Reply: Equatable {
 
     static func parse(_ data: Data) -> Reply? {
         let b = [UInt8](data)
-        guard b.count >= 2, let status = ReplyStatus(rawValue: b[1]) else { return nil }
-        return Reply(op: b[0], status: status, logSize: b.count >= 6 ? u32(b, 2) : nil)
+        guard b.count >= 2 else { return nil }
+        return Reply(op: b[0], status: ReplyStatus(rawValue: b[1]) ?? .unknown, logSize: b.count >= 6 ? u32(b, 2) : nil)
     }
 }
 

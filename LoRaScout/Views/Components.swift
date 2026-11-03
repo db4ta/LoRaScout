@@ -75,6 +75,8 @@ struct StatusTile: View {
 
 struct EventRow: View {
     var event: TesterEvent
+    /// Names the tester when several are active.
+    var device: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -82,6 +84,7 @@ struct EventRow: View {
                 .foregroundStyle(event.kind.severity.color)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
+                if let device { Text(device).font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
                 Text(event.kind.title).font(.subheadline)
                 if let hint = event.kind.deviceHint(profile: event.profile) {
                     Text(hint).font(.caption).foregroundStyle(.secondary)
@@ -97,6 +100,7 @@ struct EventRow: View {
 /// Appears on every tab when the tester gives its success or failure signal.
 struct EventToast: View {
     var event: TesterEvent
+    var device: String
     var dismiss: () -> Void
 
     var body: some View {
@@ -106,6 +110,7 @@ struct EventToast: View {
                     .font(.title2)
                     .foregroundStyle(event.kind.severity.color)
                 VStack(alignment: .leading, spacing: 2) {
+                    Text(device).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Text(event.kind.title).font(.headline)
                     if let hint = event.kind.deviceHint(profile: event.profile) {
                         Text(hint).font(.footnote).foregroundStyle(.secondary)
@@ -128,7 +133,7 @@ struct EventToast: View {
     }
 }
 
-extension FieldTester.Link {
+extension TesterSession.Link {
     var title: String {
         switch self {
         case .starting: "Bluetooth startet"
@@ -140,12 +145,14 @@ extension FieldTester.Link {
         case .pairing: "Kopplung läuft"
         case .pairingFailed, .bondLost: "Kopplung gestört"
         case .ready: "Verbunden"
+        case .choosing: "Kein Tester gewählt"
         }
     }
 
     var symbol: String {
         switch self {
         case .ready: "checkmark.circle.fill"
+        case .choosing: "list.bullet.circle.fill"
         case .searching, .connecting, .pairing, .starting: "arrow.triangle.2.circlepath.circle.fill"
         default: "xmark.circle.fill"
         }
@@ -154,7 +161,7 @@ extension FieldTester.Link {
     var color: Color {
         switch self {
         case .ready: .green
-        case .searching, .connecting, .pairing, .starting: .orange
+        case .searching, .connecting, .pairing, .starting, .choosing: .orange
         default: .red
         }
     }
@@ -174,18 +181,25 @@ extension FieldTester.Link {
         case .bondLost:
             "Der Tester kennt dieses iPhone nicht mehr. iOS-Einstellungen, Bluetooth, FieldTester, „Dieses Gerät ignorieren“. Danach Core2 neu starten und App neu öffnen."
         case .ready: nil
+        case .choosing: "Auf Home „Gerät wählen“ tippen und einen Tester aussuchen."
         }
     }
 }
 
 /// Connection state above every screen, hidden once the device is ready.
 struct LinkBanner: View {
-    @Environment(FieldTester.self) private var tester
+    @Environment(TesterCentral.self) private var central
+    private var tester: TesterSession { central.focused }
+
+    /// With several testers the banner says which one it is about.
+    private var title: String {
+        central.isMulti && central.radio == nil ? "\(tester.shortTitle): \(tester.link.title)" : tester.link.title
+    }
 
     var body: some View {
         if let help = tester.link.help {
             VStack(alignment: .leading, spacing: 6) {
-                StatusLabel(text: tester.link.title, symbol: tester.link.symbol, color: tester.link.color)
+                StatusLabel(text: title, symbol: tester.link.symbol, color: tester.link.color)
                     .font(.subheadline.weight(.semibold))
                 Text(help).font(.footnote).fixedSize(horizontal: false, vertical: true)
                 if tester.link == .pairingFailed {

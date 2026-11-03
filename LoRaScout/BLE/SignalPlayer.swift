@@ -1,7 +1,8 @@
 import AVFoundation
 
 /// Signal tones like on the tester: Quindar tone for send, a lower one for receive, a triple chime like Master Caution for failures.
-/// The audio session is only active while a tone plays, so music on the iPhone gets quieter and comes back.
+/// With several testers a short spoken name follows the tone. Signals queue up, so two testers don't cut each other off.
+/// The audio session is only active while something plays, so music on the iPhone gets quieter and comes back.
 final class SignalPlayer {
     static let enabledKey = "signalTones"
 
@@ -9,27 +10,59 @@ final class SignalPlayer {
     private static let gap = silence(ms: 100)
 
     private var player: AVAudioPlayer?
+    private let speech = AVSpeechSynthesizer()
+    private var queue: [(samples: [Double], label: String?)] = []
+    private var busy = false
 
-    func play(_ kinds: [EventKind]) {
+    init() {
+        speech.usesApplicationAudioSession = true
+    }
+
+    /// `label` names the tester, nil with a single one.
+    func play(_ kinds: [EventKind], label: String? = nil) {
         guard UserDefaults.standard.bool(forKey: Self.enabledKey) else { return }
         let samples = kinds.flatMap { Self.samples($0) }
-        if !samples.isEmpty { play(samples) }
+        if !samples.isEmpty { enqueue(samples, label: label) }
     }
 
     func preview() {
-        play(Self.sendTone + Self.gap + Self.receiveTone + Self.gap + Self.caution)
+        enqueue(Self.sendTone + Self.gap + Self.receiveTone + Self.gap + Self.caution, label: nil)
     }
 
-    private func play(_ samples: [Double]) {
+    private func enqueue(_ samples: [Double], label: String?) {
+        queue.append((samples, label))
+        if !busy { playNext() }
+    }
+
+    private func playNext() {
         let session = AVAudioSession.sharedInstance()
+        guard !queue.isEmpty else {
+            busy = false
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            return
+        }
+        busy = true
+        let (samples, label) = queue.removeFirst()
         try? session.setCategory(.playback, options: [.duckOthers])
         try? session.setActive(true)
         player = try? AVAudioPlayer(data: Self.wav(samples))
         player?.play()
         let duration = player?.duration ?? 0
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.3) { [weak self] in
-            guard self?.player?.isPlaying != true else { return }
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) { [weak self] in
+            guard let self else { return }
+            if let label {
+                let utterance = AVSpeechUtterance(string: label)
+                utterance.voice = AVSpeechSynthesisVoice(language: "de-DE")
+                speech.speak(utterance)
+            }
+            waitForSpeech()
+        }
+    }
+
+    private func waitForSpeech() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            if speech.isSpeaking { waitForSpeech() } else { playNext() }
         }
     }
 

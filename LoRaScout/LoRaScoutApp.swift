@@ -9,13 +9,13 @@ import SwiftUI
 
 @main
 struct LoRaScoutApp: App {
-    @State private var tester = FieldTester()
+    @State private var central = TesterCentral()
     @State private var coverage = CoverageStore()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(tester)
+                .environment(central)
                 .environment(coverage)
         }
     }

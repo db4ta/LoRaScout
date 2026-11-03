@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ConfigView: View {
-    @Environment(FieldTester.self) private var tester
+    @Environment(TesterCentral.self) private var central
     @Environment(CoverageStore.self) private var coverage
 
     @State private var credentials: [ConfigID: String] = [:]
@@ -24,6 +24,10 @@ struct ConfigView: View {
     @State private var inputError: String?
     @State private var coverageToken = ""
 
+    /// Konfig edits one tester, the one chosen at the top.
+    private var tester: TesterSession { central.focused }
+    private var kind: DeviceKind { tester.kind }
+
     /// The current value stays selectable even if the portal stored one that isn't on the list.
     private var brightnessChoices: [UInt8] { Set([10, 25, 50, 75, 100, brightness]).sorted() }
     private var displayOffChoices: [UInt8] { Set([15, 30, 60, 120, displayOffSeconds]).sorted() }
@@ -36,11 +40,14 @@ struct ConfigView: View {
 
     var body: some View {
         Screen(title: "Konfiguration") {
+            if central.isMulti { TesterPicker() }
             Section("Verbindung") {
                 LabeledContent("Tester") {
                     StatusLabel(text: tester.link.title, symbol: tester.link.symbol, color: tester.link.color)
                 }
                 if let name = tester.deviceName { LabeledContent("Name", value: name) }
+                if tester.id != nil { LabeledContent("Typ", value: tester.kind.title) }
+                NavigationLink("Geräte") { DeviceListView() }
             }
             if let config = tester.config {
                 deviceSections(config)
@@ -60,6 +67,11 @@ struct ConfigView: View {
             // After a failed save the input stays so it can be corrected.
             if let config, !tester.configFailed { load(config) }
         }
+        .onChange(of: central.focusedID) {
+            // Another tester: its own values, never the input meant for the previous one.
+            inputError = nil
+            if let config = tester.config { load(config) }
+        }
     }
 
     @ViewBuilder
@@ -73,12 +85,14 @@ struct ConfigView: View {
             Picker("Rückmeldung", selection: $profile) {
                 ForEach(UInt8(0)...3, id: \.self) { Text(EventKind.profileName($0)).tag($0) }
             }
-            Toggle("Signaltöne am Tester", isOn: $signalTones)
-            Picker("Display zeigt", selection: screenBinding) {
-                Text("Home").tag(UInt8(0))
-                Text("Gateways").tag(UInt8(1))
-                Text("Stats").tag(UInt8(2))
-                Text("Upload").tag(UInt8(3))
+            if kind.supports(.signalTones) { Toggle("Signaltöne am Tester", isOn: $signalTones) }
+            if kind.supports(.screens) {
+                Picker("Display zeigt", selection: screenBinding) {
+                    Text("Home").tag(UInt8(0))
+                    Text("Gateways").tag(UInt8(1))
+                    Text("Stats").tag(UInt8(2))
+                    if kind.supports(.wifiUpload) { Text("Upload").tag(UInt8(3)) }
+                }
             }
             Button("Tester neu starten", role: .destructive) { tester.restart() }
         } header: {
@@ -86,8 +100,10 @@ struct ConfigView: View {
         } footer: {
             if tester.restartNeeded {
                 Text("LoRaWAN-Schlüssel und Prozessortakt wirken erst nach einem Neustart.").foregroundStyle(.orange)
-            } else {
+            } else if kind.supports(.signalTones) {
                 Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. „Display zeigt“ wirkt sofort. Signaltöne: hoher Ton beim Senden, tiefer beim Empfang, Dreifachgong bei Fehlern. Sie klingen nur in Profilen mit Ton.")
+            } else {
+                Text("Rückmeldung legt fest, wie der Tester OK und Fehler meldet. \(kind.title) hat keinen Lautsprecher, Signaltöne gibt es dann nur in der App.")
             }
         }
         Section {
@@ -119,6 +135,10 @@ struct ConfigView: View {
         } footer: {
             Text("Diese Schlüssel stehen in der TTN-Console beim Gerät. Hex-Zeichen, ohne Leerzeichen.")
         }
+        if kind.supports(.wifiName) { wifiSection(config) }
+    }
+
+    private func wifiSection(_ config: DeviceConfig) -> some View {
         Section {
             TitledField(title: "WLAN-Name") { TextField("WLAN-Name", text: $wifiName).plainInput() }
             SecureField("WLAN-Passwort: \(setHint(config.wifiPasswordSet))", text: $wifiPassword)
@@ -137,12 +157,12 @@ struct ConfigView: View {
     private var signalSection: some View {
         Section {
             Toggle("Signaltöne in der App", isOn: $appSignals)
-            Button("Töne anhören") { tester.previewSignals() }
+            Button("Töne anhören") { central.previewSignals() }
             Toggle("iPhone-Display bleibt an", isOn: $phoneScreenAwake)
         } header: {
             Text("App")
         } footer: {
-            Text("Töne klingen wie am Tester, auch bei stumm geschaltetem iPhone, und nur solange die App im Vordergrund läuft. „iPhone-Display bleibt an“ verhindert die automatische Sperre, solange die App offen ist. Braucht mehr Akku.")
+            Text("Töne klingen wie am Tester, auch bei stumm geschaltetem iPhone, und nur solange die App im Vordergrund läuft. Sind mehrere Tester aktiv, sagt die App danach den Namen, z. B. „Tracker C3D4“. „iPhone-Display bleibt an“ verhindert die automatische Sperre, solange die App offen ist. Braucht mehr Akku.")
         }
     }
 
@@ -151,6 +171,16 @@ struct ConfigView: View {
         return Section {
             TitledField(title: "Server") {
                 TextField("IP oder URL", text: $coverage.host).plainInput().keyboardType(.URL)
+            }
+            TitledField(title: "Port") {
+                TextField("automatisch (8090, dann 8099)", text: $coverage.port).plainInput().keyboardType(.numberPad)
+            }
+            LabeledContent("Servertyp", value: coverage.endpoint.map { "\($0.kind.title), Port \($0.port)" } ?? "noch nicht geprüft")
+            Button(coverage.checking ? "Prüft …" : "Verbindung prüfen") { Task { await coverage.checkServer() } }
+                .disabled(coverage.checking || coverage.host.isEmpty)
+            if let message = coverage.checkMessage {
+                let severity = coverage.checkFailed ? EventSeverity.failure : .success
+                StatusLabel(text: message, symbol: severity.symbol, color: severity.color).font(.footnote)
             }
             SecureField(coverage.tokenSet ? "Token gesetzt, neu eingeben zum Ändern" : "Upload-Token", text: $coverageToken)
                 .onSubmit(saveCoverageToken)
@@ -162,7 +192,7 @@ struct ConfigView: View {
         } header: {
             Text("Coverage-Server")
         } footer: {
-            Text("Gilt nur für diese App. Der Server wird vom Tester übernommen und lässt sich ändern. Das Token ist dasselbe wie beim Upload, der Tester gibt es aber nicht heraus, darum hier eingeben. Es liegt im Schlüsselbund.")
+            Text("Gilt nur für diese App. Der Server wird vom Tester übernommen und lässt sich ändern. Ohne Port sucht die App zuerst den LoRaScout Server (8090), dann das ioBroker-Skript (8099). Der LoRaScout Server liefert die Daten je Tester. Das Token ist dasselbe wie beim Upload (beim LoRaScout Server geht auch der Admin-Token), der Tester gibt es aber nicht heraus, darum hier eingeben. Es liegt im Schlüsselbund.")
         }
     }
 
@@ -254,7 +284,7 @@ struct ConfigView: View {
             (.server, "Server", server, ConfigWrite.maxValueSize, config.server),
             (.uploadToken, "Token", token, 40, nil),
         ]
-        for (id, label, value, limit, current) in texts where value != (current ?? "") {
+        for (id, label, value, limit, current) in texts where kind.supports(id) && value != (current ?? "") {
             guard !value.isEmpty, value.utf8.count <= limit else {
                 inputError = value.isEmpty ? "\(label) darf nicht leer sein." : "\(label): höchstens \(limit) Bytes."
                 return
@@ -270,6 +300,8 @@ struct ConfigView: View {
         if signalTones != config.signalTones { writes.append(.flag(.signalTones, signalTones)) }
         if upload != config.uploadOnBoot { writes.append(.uploadOnBoot(upload)) }
 
+        // Hidden fields keep their loaded value anyway, this only guards against a device kind change mid-edit.
+        writes.removeAll { !kind.supports($0.id) }
         if writes.isEmpty {
             inputError = "Keine Änderungen."
             return

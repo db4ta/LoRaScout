@@ -37,7 +37,14 @@ struct Archive: Equatable {
     /// Keys of deleted rows, so the log still on the iPhone doesn't bring them back.
     var deleted = Set<String>()
 
-    static func key(_ row: MergedRow) -> String { row.time + "|" + row.status }
+    static func key(_ row: MergedRow) -> String {
+        row.time + "|" + row.status + (row.device.isEmpty ? "" : "|" + row.device)
+    }
+
+    /// Key of an untagged row. Only rows of the legacy owner may take it over, other testers stay apart.
+    private static func legacyKey(_ row: MergedRow) -> String? {
+        row.device.isEmpty || DeviceKind(name: row.device) == DeviceKind.legacyOwner ? row.time + "|" + row.status : nil
+    }
 
     private static func rank(_ received: Received) -> Int {
         switch received {
@@ -51,7 +58,7 @@ struct Archive: Equatable {
     static func combine(_ old: MergedRow, _ new: MergedRow) -> MergedRow {
         var best = rank(new.received) > rank(old.received) ? new : old
         let other = rank(new.received) > rank(old.received) ? old : new
-        let fields: [WritableKeyPath<MergedRow, String>] = [\.lat, \.lng, \.alt, \.gw, \.rssi, \.snr, \.sf]
+        let fields: [WritableKeyPath<MergedRow, String>] = [\.lat, \.lng, \.alt, \.gw, \.rssi, \.snr, \.sf, \.device]
         for field in fields where best[keyPath: field].isEmpty { best[keyPath: field] = other[keyPath: field] }
         best.id = 0
         return best
@@ -69,10 +76,10 @@ struct Archive: Equatable {
                 summary.skippedNoTime += 1
                 continue
             }
-            let key = Self.key(row)
-            if deleted.contains(key) { continue }
+            let key = Self.key(row), legacy = Self.legacyKey(row)
+            if deleted.contains(key) || legacy.map(deleted.contains) == true { continue }
             row.id = 0
-            if let place = known[key] {
+            if let place = known[key] ?? legacy.flatMap({ known[$0] }) {
                 let old = days[place.day]?[place.index] ?? row
                 let merged = Self.combine(old, row)
                 if merged != old {
@@ -94,8 +101,10 @@ struct Archive: Equatable {
         return summary
     }
 
-    func result(for period: Period) -> MergeResult {
+    /// `device` nil means all testers, a name only that tester's rows, "" the rows from before device tags.
+    func result(for period: Period, device: String? = nil) -> MergeResult {
         let rows = days.keys.filter(period.contains).sorted().flatMap { days[$0] ?? [] }
+            .filter { device == nil || $0.device == device }
         return MergeResult(rows: rows.enumerated().map { index, row in
             var copy = row
             copy.id = index
@@ -103,10 +112,10 @@ struct Archive: Equatable {
         }, lastServerTime: "", rowsAfterCoverage: 0)
     }
 
-    private func entry(_ period: Period) -> PeriodEntry {
+    private func entry(_ period: Period, device: String?) -> PeriodEntry {
         var entry = PeriodEntry(period: period, count: 0, received: 0, lost: 0)
         for day in days.keys where period.contains(day) {
-            for row in days[day] ?? [] {
+            for row in days[day] ?? [] where device == nil || row.device == device {
                 entry.count += 1
                 if row.received == .yes { entry.received += 1 }
                 if row.received == .no { entry.lost += 1 }
@@ -116,46 +125,59 @@ struct Archive: Equatable {
     }
 
     /// One entry per day, month or year that has data, oldest first.
-    func entries(_ kind: PeriodKind) -> [PeriodEntry] {
+    func entries(_ kind: PeriodKind, device: String? = nil) -> [PeriodEntry] {
         var seen = Set<DayKey>()
         var periods: [Period] = []
-        for day in days.keys.sorted() where days[day]?.isEmpty == false {
+        for day in days.keys.sorted() where days[day]?.contains(where: { device == nil || $0.device == device }) == true {
             let period = Period(kind: kind, anchor: day)
             if seen.insert(period.first ?? day).inserted { periods.append(period) }
         }
-        return periods.map(entry)
+        return periods.map { entry($0, device: device) }
     }
 
     /// Points for the loss chart: the next finer steps of the period, nil for a single day.
-    func trend(for period: Period) -> [PeriodEntry] {
+    func trend(for period: Period, device: String? = nil) -> [PeriodEntry] {
         switch period.kind {
         case .day: return []
-        case .month: return entries(.day).filter { period.contains($0.period.anchor) }
-        case .year: return entries(.month).filter { period.contains($0.period.anchor) }
+        case .month: return entries(.day, device: device).filter { period.contains($0.period.anchor) }
+        case .year: return entries(.month, device: device).filter { period.contains($0.period.anchor) }
         case .all:
-            let years = entries(.year), months = entries(.month)
+            let years = entries(.year, device: device), months = entries(.month, device: device)
             if years.count >= 3 { return years }
-            return months.count >= 2 ? months : entries(.day)
+            return months.count >= 2 ? months : entries(.day, device: device)
         }
     }
 
     var latestDay: DayKey? { days.keys.filter { days[$0]?.isEmpty == false }.max() }
     var rowCount: Int { days.values.reduce(0) { $0 + $1.count } }
+    func rowCount(device: String?) -> Int {
+        device.map { tag in days.values.reduce(0) { $0 + $1.count { $0.device == tag } } } ?? rowCount
+    }
+
+    /// Device names in the archive, sorted. "" stands for rows from before device tags.
+    var deviceTags: [String] { Set(days.values.flatMap { $0.map(\.device) }).sorted() }
 }
 
 extension Archive {
     /// Rows to store. Without a merge everything is unknown so far, the device's own values stay.
     /// Rows newer than the coverage log can't have been matched yet, "lost" would be a guess.
-    static func rows(result: MergeResult?, device: Data) -> [MergedRow] {
-        guard let result else { return deviceRows(device) }
+    /// `tag` names the tester the log came from, empty while its name is unknown.
+    static func rows(result: MergeResult?, device: Data, tag: String = "") -> [MergedRow] {
+        guard let result else { return deviceRows(device).map { tagged($0, tag) } }
         let last = CoverageMerge.parseTime(result.lastServerTime)
         return result.rows.map { row in
             guard row.received == .no, let last, let time = CoverageMerge.parseTime(row.time),
-                  time > last + CoverageMerge.windowAfter else { return row }
+                  time > last + CoverageMerge.windowAfter else { return tagged(row, tag) }
             var copy = row
             copy.received = .unknown
-            return copy
+            return tagged(copy, tag)
         }
+    }
+
+    private static func tagged(_ row: MergedRow, _ tag: String) -> MergedRow {
+        var copy = row
+        copy.device = tag
+        return copy
     }
 
     private static func deviceRows(_ device: Data) -> [MergedRow] {
@@ -216,7 +238,7 @@ struct ArchiveFiles {
             guard CoverageMerge.parseTime(value("Time_UTC")) != nil else { return nil }
             return MergedRow(id: 0, time: value("Time_UTC"), lat: value("Lat"), lng: value("Lng"), alt: value("Alt"),
                              status: value("Status"), received: Received(rawValue: value("Received")) ?? .unknown,
-                             gw: value("GW"), rssi: value("RSSI"), snr: value("SNR"), sf: value("SF"))
+                             gw: value("GW"), rssi: value("RSSI"), snr: value("SNR"), sf: value("SF"), device: value("Device"))
         }
     }
 
@@ -276,12 +298,16 @@ struct ArchiveBook {
         return summary
     }
 
-    mutating func remove(_ period: Period) throws {
+    /// `device` nil removes all testers' rows of the period, otherwise only that tester's.
+    mutating func remove(_ period: Period, device: String? = nil) throws {
         var next = archive
         let days = Set(next.days.keys.filter(period.contains))
         for day in days {
-            next.deleted.formUnion((next.days[day] ?? []).map { Archive.key($0) })
-            next.days[day] = nil
+            let rows = next.days[day] ?? []
+            let gone = rows.filter { device == nil || $0.device == device }
+            next.deleted.formUnion(gone.map { Archive.key($0) })
+            let kept = rows.filter { device != nil && $0.device != device }
+            next.days[day] = kept.isEmpty ? nil : kept
         }
         do {
             try files.saveDeleted(next.deleted)

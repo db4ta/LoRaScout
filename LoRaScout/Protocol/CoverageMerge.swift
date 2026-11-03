@@ -16,6 +16,8 @@ struct MergedRow: Identifiable, Equatable {
     var rssi = ""
     var snr = ""
     var sf = ""
+    /// Advertised name of the tester, empty for rows from before device tags.
+    var device = ""
 
     var latitude: Double? { Double(lat) }
     var longitude: Double? { Double(lng) }
@@ -29,10 +31,13 @@ struct MergeResult: Equatable {
 
     func count(_ received: Received) -> Int { rows.count { $0.received == received } }
 
+    /// The Device column only appears once a row has one, so merged.csv stays like merge_coverage.py.
     var csv: Data {
-        let header = ["Time_UTC", "Lat", "Lng", "Alt", "Status", "Received", "GW", "RSSI", "SNR", "SF"]
+        let tagged = rows.contains { !$0.device.isEmpty }
+        let header = ["Time_UTC", "Lat", "Lng", "Alt", "Status", "Received", "GW", "RSSI", "SNR", "SF"] + (tagged ? ["Device"] : [])
         let lines = [header] + rows.map {
             [$0.time, $0.lat, $0.lng, $0.alt, $0.status, $0.received.rawValue, $0.gw, $0.rssi, $0.snr, $0.sf]
+                + (tagged ? [$0.device] : [])
         }
         return Data(lines.map { $0.map { CoverageMerge.quoted($0) }.joined(separator: ",") + "\r\n" }.joined().utf8)
     }
@@ -80,28 +85,92 @@ struct CoverageStats: Equatable {
     }
 }
 
+/// One tester's log for the merge. `tag` is its name for the archive, `devEUI` picks its rows in the server log.
+struct DeviceLog: Equatable {
+    var tag: String
+    var data: Data
+    var devEUI: String?
+}
+
+/// The server's coverage log, sorted by time. The legacy file has no header:
+/// `Time_UTC,FCnt,Lat,Lng,Alt,GW,RSSI,SNR,SF`, a tenth column is taken as DevEUI.
+/// With a header row, columns are found by name, the device in `Device`, `DevEUI` or `dev_eui`.
+struct ServerLog {
+    struct Row {
+        var time: Int
+        var text: String
+        var gw: String
+        var rssi: String
+        var snr: String
+        var sf: String
+        /// Normalized DevEUI, empty if the server doesn't name the device.
+        var device: String
+    }
+
+    private(set) var rows: [Row]
+
+    var isEmpty: Bool { rows.isEmpty }
+    var hasDevices: Bool { rows.contains { !$0.device.isEmpty } }
+
+    private static let legacyColumns = ["time_utc": 0, "gw": 5, "rssi": 6, "snr": 7, "sf": 8, "device": 9]
+    private static let aliases = ["time": "time_utc", "deveui": "device", "dev_eui": "device", "device_eui": "device",
+                                  "gateways": "gw", "gwcount": "gw"]
+
+    init(_ data: Data) {
+        var lines = CoverageMerge.parseCSV(data)
+        var columns = Self.legacyColumns
+        if let first = lines.first, let head = first.first, CoverageMerge.parseTime(head) == nil,
+           first.contains(where: { ["time_utc", "time"].contains($0.lowercased()) }) {
+            columns = [:]
+            for (index, name) in first.enumerated() {
+                let key = name.trimmingCharacters(in: .whitespaces).lowercased()
+                columns[Self.aliases[key] ?? key] = columns[Self.aliases[key] ?? key] ?? index
+            }
+            lines.removeFirst()
+        }
+        func value(_ fields: [String], _ name: String) -> String {
+            guard let index = columns[name], index < fields.count else { return "" }
+            return fields[index]
+        }
+        let parsed = lines.enumerated().compactMap { index, fields -> (Int, Row)? in
+            let text = value(fields, "time_utc")
+            guard let time = CoverageMerge.parseTime(text) else { return nil }
+            return (index, Row(time: time, text: text, gw: value(fields, "gw"), rssi: value(fields, "rssi"),
+                               snr: value(fields, "snr"), sf: value(fields, "sf"),
+                               device: DevEUI.normalized(value(fields, "device"))))
+        }
+        rows = parsed.sorted { ($0.1.time, $0.0) < ($1.1.time, $1.0) }.map(\.1)
+    }
+}
+
 /// Same behavior as tools/merge_coverage.py in the firmware repo. Keep both in step.
+/// Additionally: if the server names the device, a tester only takes rows with its own DevEUI.
 enum CoverageMerge {
     private static let windowBefore = 5
     static let windowAfter = 15
 
-    // The device stamps the row before sending, the server stamps on reception.
-    private struct ServerRow {
-        var time: Int
-        var text: String
-        var fields: [String]
-
-        func field(_ index: Int) -> String { index < fields.count ? fields[index] : "" }
+    /// nil if the coverage log has no usable rows or the device CSV lacks the Time_UTC or Status column.
+    static func merge(device: Data, server: Data, devEUI: String? = nil) -> MergeResult? {
+        var used = Set<Int>()
+        return merge(device: device, server: ServerLog(server), devEUI: devEUI, used: &used)
     }
 
-    /// nil if the coverage log has no usable rows or the device CSV lacks the Time_UTC or Status column.
-    static func merge(device: Data, server: Data) -> MergeResult? {
-        let serverRows = readServer(server)
-        guard let first = serverRows.first, let last = serverRows.last else { return nil }
+    /// `used` holds the server rows already given to a tester, so with several testers none is counted twice.
+    /// Rows without device match every tester. A tester without known DevEUI matches all rows, like before,
+    /// but only the untagged ones once the server names devices, so rows of two testers never mix.
+    /// If the server names devices but none of its rows is this tester's, its rows stay unknown.
+    static func merge(device: Data, server: ServerLog, devEUI: String?, used: inout Set<Int>) -> MergeResult? {
+        guard let globalLast = server.rows.last else { return nil }
+        let own = devEUI.flatMap { DevEUI.normalized($0).nonEmpty }
+        let candidates = server.rows.indices.filter { index in
+            let device = server.rows[index].device
+            return device.isEmpty || device == own
+        }
+        let first = candidates.first.map { server.rows[$0] }, last = candidates.last.map { server.rows[$0] }
 
         var deviceRows = parseCSV(device)
         guard !deviceRows.isEmpty else {
-            return MergeResult(rows: [], lastServerTime: last.text, rowsAfterCoverage: 0)
+            return MergeResult(rows: [], lastServerTime: (last ?? globalLast).text, rowsAfterCoverage: 0)
         }
         let columns = Dictionary(deviceRows.removeFirst().enumerated().map { ($1, $0) }) { _, later in later }
         func value(_ row: [String], _ name: String) -> String {
@@ -110,22 +179,21 @@ enum CoverageMerge {
         }
         if !deviceRows.isEmpty, columns["Time_UTC"] == nil || columns["Status"] == nil { return nil }
 
-        var used = Set<Int>()
         var rows: [MergedRow] = []
         var afterCoverage = 0
         for row in deviceRows where value(row, "Status") != "TEST" {
             let text = value(row, "Time_UTC")
             var merged = MergedRow(id: rows.count, time: text, lat: value(row, "Lat"), lng: value(row, "Lng"),
                                    alt: value(row, "Alt"), status: value(row, "Status"), received: .unknown)
-            if let time = parseTime(text), time + windowAfter >= first.time {
-                if let index = match(time, serverRows, used) {
+            if let first, let last, let time = parseTime(text), time + windowAfter >= first.time {
+                if let index = match(time, server.rows, candidates, used) {
                     used.insert(index)
-                    let hit = serverRows[index]
+                    let hit = server.rows[index]
                     merged.received = .yes
-                    merged.gw = hit.field(5)
-                    merged.rssi = hit.field(6)
-                    merged.snr = hit.field(7)
-                    merged.sf = hit.field(8)
+                    merged.gw = hit.gw
+                    merged.rssi = hit.rssi
+                    merged.snr = hit.snr
+                    merged.sf = hit.sf
                 } else {
                     merged.received = .no
                     if time > last.time + windowAfter { afterCoverage += 1 }
@@ -133,34 +201,26 @@ enum CoverageMerge {
             }
             rows.append(merged)
         }
-        return MergeResult(rows: rows, lastServerTime: last.text, rowsAfterCoverage: afterCoverage)
+        return MergeResult(rows: rows, lastServerTime: (last ?? globalLast).text, rowsAfterCoverage: afterCoverage)
     }
 
     /// True if the data contains at least one coverage row with a valid time.
-    static func isCoverage(_ data: Data) -> Bool { !readServer(data).isEmpty }
+    static func isCoverage(_ data: Data) -> Bool { !ServerLog(data).isEmpty }
 
-    /// Lowest free server row inside the window. Server rows are sorted, so the search can start at the window.
-    private static func match(_ time: Int, _ server: [ServerRow], _ used: Set<Int>) -> Int? {
+    /// Lowest free candidate row inside the window. Rows are sorted, so the search can start at the window.
+    private static func match(_ time: Int, _ server: [ServerLog.Row], _ candidates: [Int], _ used: Set<Int>) -> Int? {
         let start = time - windowBefore, end = time + windowAfter
-        var low = 0, high = server.count
+        var low = 0, high = candidates.count
         while low < high {
             let middle = (low + high) / 2
-            if server[middle].time < start { low = middle + 1 } else { high = middle }
+            if server[candidates[middle]].time < start { low = middle + 1 } else { high = middle }
         }
-        var index = low
-        while index < server.count, server[index].time <= end {
-            if !used.contains(index) { return index }
-            index += 1
+        var position = low
+        while position < candidates.count, server[candidates[position]].time <= end {
+            if !used.contains(candidates[position]) { return candidates[position] }
+            position += 1
         }
         return nil
-    }
-
-    private static func readServer(_ data: Data) -> [ServerRow] {
-        let rows = parseCSV(data).enumerated().compactMap { index, fields -> (Int, ServerRow)? in
-            guard let text = fields.first, let time = parseTime(text) else { return nil }
-            return (index, ServerRow(time: time, text: text, fields: fields))
-        }
-        return rows.sorted { ($0.1.time, $0.0) < ($1.1.time, $1.0) }.map(\.1)
     }
 
     // MARK: Python-compatible CSV and time

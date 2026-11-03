@@ -40,8 +40,10 @@ enum MapImage {
         return region
     }
 
-    static func render(region: MKCoordinateRegion, points: [MapPoint], legend: [LegendItem],
+    /// `devices` are the ring colours of several testers, empty with one.
+    static func render(region: MKCoordinateRegion, points: [MapPoint], legend: [LegendItem], devices: [LegendItem] = [],
                        summary: String, period: String) async throws -> URL {
+        let bandHeight = Self.bandHeight + (devices.isEmpty ? 0 : 50)
         let options = MKMapSnapshotter.Options()
         options.region = region
         options.size = mapSize
@@ -63,13 +65,13 @@ enum MapImage {
                 let path = UIBezierPath(ovalIn: dot)
                 UIColor(point.color).setFill()
                 path.fill()
-                UIColor.white.setStroke()
-                path.lineWidth = 2
+                (point.ring.map { UIColor($0) } ?? .white).setStroke()
+                path.lineWidth = point.ring == nil ? 2 : 5
                 path.stroke()
             }
             UIColor.white.setFill()
             context.fill(CGRect(x: 0, y: mapSize.height, width: mapSize.width, height: bandHeight))
-            drawBand(top: mapSize.height, legend: legend, summary: summary, period: period)
+            drawBand(top: mapSize.height, legend: legend, devices: devices, summary: summary, period: period)
         }
 
         guard let data = image.jpegData(compressionQuality: 0.9) else { throw CocoaError(.fileWriteUnknown) }
@@ -78,7 +80,7 @@ enum MapImage {
         return url
     }
 
-    private static func drawBand(top: CGFloat, legend: [LegendItem], summary: String, period: String) {
+    private static func drawBand(top: CGFloat, legend: [LegendItem], devices: [LegendItem], summary: String, period: String) {
         let title: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 34), .foregroundColor: UIColor.black]
         let text: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 28), .foregroundColor: UIColor.darkGray]
         (summary as NSString).draw(at: CGPoint(x: 30, y: top + 18), withAttributes: title)
@@ -92,6 +94,16 @@ enum MapImage {
             UIBezierPath(ovalIn: dot).fill()
             let label = item.text as NSString
             label.draw(at: CGPoint(x: x + 30, y: top + 118), withAttributes: text)
+            x += 30 + label.size(withAttributes: text).width + 36
+        }
+        x = 30
+        for item in devices {
+            let ring = UIBezierPath(ovalIn: CGRect(x: x + 3, y: top + 177, width: 18, height: 18))
+            ring.lineWidth = 5
+            item.color.setStroke()
+            ring.stroke()
+            let label = item.text as NSString
+            label.draw(at: CGPoint(x: x + 30, y: top + 168), withAttributes: text)
             x += 30 + label.size(withAttributes: text).width + 36
         }
     }

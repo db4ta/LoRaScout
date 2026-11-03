@@ -12,7 +12,7 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>LoRaScout verbindet sich per Bluetooth mit dem Field Tester, um Live-Daten anzuzeigen und das Gerät zu steuern.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>LoRaScout lädt das Coverage-Log vom ioBroker-Server im Heimnetz.</string>
+	<string>LoRaScout lädt das Coverage-Log vom LoRaScout Server oder ioBroker im Heimnetz.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>

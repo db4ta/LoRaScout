@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(FieldTester.self) private var tester
+    @Environment(TesterCentral.self) private var central
     @Environment(CoverageStore.self) private var coverage
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("phoneScreenAwake") private var phoneScreenAwake = false
@@ -23,17 +23,17 @@ struct ContentView: View {
             Tab("Konfig", systemImage: "gearshape", value: 4) { ConfigView() }
         }
         .overlay(alignment: .top) {
-            if let toast = tester.toast {
-                EventToast(event: toast) { tester.dismissToast() }
+            if let toast = central.toast {
+                EventToast(event: toast.event, device: toast.device) { central.dismissToast() }
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.snappy, value: tester.toast)
-        .sensoryFeedback(trigger: tester.toast) { _, toast in
-            toast.map { $0.kind.severity == .success ? .success : .error }
+        .animation(.snappy, value: central.toast)
+        .sensoryFeedback(trigger: central.toast) { _, toast in
+            toast.map { $0.event.kind.severity == .success ? .success : .error }
         }
-        .onChange(of: tester.toast) { _, toast in
-            if let toast { AccessibilityNotification.Announcement(toast.kind.title).post() }
+        .onChange(of: central.toast) { _, toast in
+            if let toast { AccessibilityNotification.Announcement("\(toast.device): \(toast.event.kind.title)").post() }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { coverage.reloadArchive() }
@@ -42,8 +42,9 @@ struct ContentView: View {
         .onChange(of: phoneScreenAwake, initial: true) { _, awake in
             UIApplication.shared.isIdleTimerDisabled = awake
         }
-        .onChange(of: tester.logRows, initial: true) { coverage.update(device: tester.logData) }
-        .onChange(of: tester.config?.server, initial: true) { _, server in
+        .onChange(of: central.logsKey, initial: true) { coverage.update(logs: central.deviceLogs) }
+        .onChange(of: central.known.compactMap(\.devEUI), initial: true) { _, list in coverage.knownDevEUIs = list }
+        .onChange(of: central.sessions.compactMap { $0.config?.server.nonEmpty }.first, initial: true) { _, server in
             if let server { coverage.offerHost(server) }
         }
         #if DEBUG
@@ -79,6 +80,6 @@ private extension ContentView {
 
 #Preview {
     ContentView()
-        .environment(FieldTester())
+        .environment(TesterCentral())
         .environment(CoverageStore())
 }

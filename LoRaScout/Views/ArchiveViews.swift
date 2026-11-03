@@ -116,9 +116,13 @@ struct ArchiveListView: View {
     }
 
     var body: some View {
-        let days = coverage.archive.entries(.day), months = coverage.archive.entries(.month)
+        let device = coverage.deviceFilter
+        let days = coverage.archive.entries(.day, device: device), months = coverage.archive.entries(.month, device: device)
         List {
-            ForEach(coverage.archive.entries(.year).reversed()) { year in
+            if coverage.deviceTags.count > 1 {
+                Section { DeviceFilterPicker() }
+            }
+            ForEach(coverage.archive.entries(.year, device: device).reversed()) { year in
                 Section {
                     row("Ganzes Jahr", year)
                     ForEach(months.filter { year.period.contains($0.period.anchor) }.reversed()) { month in
