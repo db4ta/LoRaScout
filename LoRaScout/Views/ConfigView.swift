@@ -120,11 +120,12 @@ struct ConfigView: View {
                 ForEach(displayOffChoices, id: \.self) { Text("\($0) s").tag($0) }
             }
             .disabled(!displaySave)
-            Toggle("GNSS-Standby", isOn: $gnssStandby)
+            if kind.supports(DeviceKind.Feature.gnssSleep) { Toggle("GNSS-Standby", isOn: $gnssStandby) }
         } header: {
             Text("Stromsparen")
         } footer: {
-            Text("Der Prozessortakt wirkt nach einem Neustart, alles andere sofort. Das Display geht nach der eingestellten Zeit aus, wenn das iPhone verbunden ist. Ohne iPhone nur mit „Auch ohne iPhone ausschalten“. Tippen weckt es. GNSS-Standby: Der Empfänger wacht 15 s vor dem nächsten Uplink auf, SEND NOW wartet bis zu 10 s auf die Position. Dazwischen gibt es keine aktuelle Position.")
+            Text("Der Prozessortakt wirkt nach einem Neustart, alles andere sofort. Das Display geht nach der eingestellten Zeit aus, wenn das iPhone verbunden ist. Ohne iPhone nur mit „Auch ohne iPhone ausschalten“. Tippen weckt es."
+                + (kind.supports(DeviceKind.Feature.gnssSleep) ? " GNSS-Standby: Der Empfänger wacht 15 s vor dem nächsten Uplink auf, SEND NOW wartet bis zu 10 s auf die Position. Dazwischen gibt es keine aktuelle Position." : ""))
         }
         Section {
             ForEach(tester.network.credentials) { field in
@@ -228,7 +229,7 @@ struct ConfigView: View {
     private func credentialRow(_ field: CredentialField, _ config: DeviceConfig) -> some View {
         let binding = Binding { credentials[field.id] ?? "" } set: { credentials[field.id] = $0 }
         if field.isSecret {
-            SecureField("\(field.label): \(setHint(config.isSet(field.id)))", text: binding)
+            TitledField(title: field.label) { SecureField(setHint(config.isSet(field.id)), text: binding) }
         } else {
             TitledField(title: field.label) { TextField(field.label, text: binding).plainInput() }
         }

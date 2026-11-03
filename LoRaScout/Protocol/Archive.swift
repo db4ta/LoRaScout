@@ -191,7 +191,8 @@ extension Archive {
                 return row[column]
             }
             return MergedRow(id: index, time: value("Time_UTC"), lat: value("Lat"), lng: value("Lng"), alt: value("Alt"),
-                             status: value("Status"), received: .unknown, rssi: value("RSSI"), snr: value("SNR"))
+                             status: value("Status"), received: .unknown, rssi: value("RSSI"), snr: value("SNR"),
+                             diag: MergedRow.diag(value))
         }
     }
 }
@@ -238,7 +239,8 @@ struct ArchiveFiles {
             guard CoverageMerge.parseTime(value("Time_UTC")) != nil else { return nil }
             return MergedRow(id: 0, time: value("Time_UTC"), lat: value("Lat"), lng: value("Lng"), alt: value("Alt"),
                              status: value("Status"), received: Received(rawValue: value("Received")) ?? .unknown,
-                             gw: value("GW"), rssi: value("RSSI"), snr: value("SNR"), sf: value("SF"), device: value("Device"))
+                             gw: value("GW"), rssi: value("RSSI"), snr: value("SNR"), sf: value("SF"), device: value("Device"),
+                             via: value("Via"), diag: MergedRow.diag(value))
         }
     }
 

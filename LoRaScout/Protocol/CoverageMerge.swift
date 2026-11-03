@@ -18,6 +18,19 @@ struct MergedRow: Identifiable, Equatable {
     var sf = ""
     /// Advertised name of the tester, empty for rows from before device tags.
     var device = ""
+    /// Receiving gateways from the LoRaScout server, `name(rssi/snr)` separated by spaces.
+    var via = ""
+    /// Values of `diagColumns` from the tracker log, empty if the tester writes none.
+    var diag: [String] = []
+
+    /// Radio diagnostics the tracker appends to its log (tracker/src/fieldlog.h).
+    static let diagColumns = ["FCnt", "DR", "Freq", "TxPwr", "RxWin", "DownRSSI", "DownSNR", "LinkGW", "Margin", "Code"]
+
+    /// The diagnostic values of a CSV row, empty if it has none.
+    static func diag(_ value: (String) -> String) -> [String] {
+        let values = diagColumns.map(value)
+        return values.allSatisfy(\.isEmpty) ? [] : values
+    }
 
     var latitude: Double? { Double(lat) }
     var longitude: Double? { Double(lng) }
@@ -31,13 +44,17 @@ struct MergeResult: Equatable {
 
     func count(_ received: Received) -> Int { rows.count { $0.received == received } }
 
-    /// The Device column only appears once a row has one, so merged.csv stays like merge_coverage.py.
+    /// Device, Via and the diagnostic columns only appear once a row has them, so merged.csv stays like merge_coverage.py.
     var csv: Data {
         let tagged = rows.contains { !$0.device.isEmpty }
+        let via = rows.contains { !$0.via.isEmpty }
+        let diag = rows.contains { !$0.diag.isEmpty }
+        let empty = MergedRow.diagColumns.map { _ in "" }
         let header = ["Time_UTC", "Lat", "Lng", "Alt", "Status", "Received", "GW", "RSSI", "SNR", "SF"] + (tagged ? ["Device"] : [])
+            + (via ? ["Via"] : []) + (diag ? MergedRow.diagColumns : [])
         let lines = [header] + rows.map {
             [$0.time, $0.lat, $0.lng, $0.alt, $0.status, $0.received.rawValue, $0.gw, $0.rssi, $0.snr, $0.sf]
-                + (tagged ? [$0.device] : [])
+                + (tagged ? [$0.device] : []) + (via ? [$0.via] : []) + (diag ? ($0.diag.isEmpty ? empty : $0.diag) : [])
         }
         return Data(lines.map { $0.map { CoverageMerge.quoted($0) }.joined(separator: ",") + "\r\n" }.joined().utf8)
     }
@@ -93,7 +110,8 @@ struct DeviceLog: Equatable {
 }
 
 /// The server's coverage log, sorted by time. The legacy file has no header:
-/// `Time_UTC,FCnt,Lat,Lng,Alt,GW,RSSI,SNR,SF`, a tenth column is taken as DevEUI.
+/// `Time_UTC,FCnt,Lat,Lng,Alt,GW,RSSI,SNR,SF`, a tenth column is taken as DevEUI, an eleventh as Via
+/// (receiving gateways, LoRaScout server with `via=1`).
 /// With a header row, columns are found by name, the device in `Device`, `DevEUI` or `dev_eui`.
 struct ServerLog {
     struct Row {
@@ -105,6 +123,8 @@ struct ServerLog {
         var sf: String
         /// Normalized DevEUI, empty if the server doesn't name the device.
         var device: String
+        var fcnt: String
+        var via: String
     }
 
     private(set) var rows: [Row]
@@ -112,7 +132,7 @@ struct ServerLog {
     var isEmpty: Bool { rows.isEmpty }
     var hasDevices: Bool { rows.contains { !$0.device.isEmpty } }
 
-    private static let legacyColumns = ["time_utc": 0, "gw": 5, "rssi": 6, "snr": 7, "sf": 8, "device": 9]
+    private static let legacyColumns = ["time_utc": 0, "fcnt": 1, "gw": 5, "rssi": 6, "snr": 7, "sf": 8, "device": 9, "via": 10]
     private static let aliases = ["time": "time_utc", "deveui": "device", "dev_eui": "device", "device_eui": "device",
                                   "gateways": "gw", "gwcount": "gw"]
 
@@ -137,7 +157,8 @@ struct ServerLog {
             guard let time = CoverageMerge.parseTime(text) else { return nil }
             return (index, Row(time: time, text: text, gw: value(fields, "gw"), rssi: value(fields, "rssi"),
                                snr: value(fields, "snr"), sf: value(fields, "sf"),
-                               device: DevEUI.normalized(value(fields, "device"))))
+                               device: DevEUI.normalized(value(fields, "device")), fcnt: value(fields, "fcnt"),
+                               via: value(fields, "via")))
         }
         rows = parsed.sorted { ($0.1.time, $0.0) < ($1.1.time, $1.0) }.map(\.1)
     }
@@ -185,8 +206,9 @@ enum CoverageMerge {
             let text = value(row, "Time_UTC")
             var merged = MergedRow(id: rows.count, time: text, lat: value(row, "Lat"), lng: value(row, "Lng"),
                                    alt: value(row, "Alt"), status: value(row, "Status"), received: .unknown)
+            merged.diag = MergedRow.diag { value(row, $0) }
             if let first, let last, let time = parseTime(text), time + windowAfter >= first.time {
-                if let index = match(time, server.rows, candidates, used) {
+                if let index = match(time, value(row, "FCnt"), server.rows, candidates, used) {
                     used.insert(index)
                     let hit = server.rows[index]
                     merged.received = .yes
@@ -194,6 +216,7 @@ enum CoverageMerge {
                     merged.rssi = hit.rssi
                     merged.snr = hit.snr
                     merged.sf = hit.sf
+                    merged.via = hit.via
                 } else {
                     merged.received = .no
                     if time > last.time + windowAfter { afterCoverage += 1 }
@@ -208,19 +231,27 @@ enum CoverageMerge {
     static func isCoverage(_ data: Data) -> Bool { !ServerLog(data).isEmpty }
 
     /// Lowest free candidate row inside the window. Rows are sorted, so the search can start at the window.
-    private static func match(_ time: Int, _ server: [ServerLog.Row], _ candidates: [Int], _ used: Set<Int>) -> Int? {
+    /// If the tester logs its FCnt, a free row with the same FCnt wins over the lowest one
+    /// (not in merge_coverage.py: its Core2 logs have no FCnt).
+    private static func match(_ time: Int, _ fcnt: String, _ server: [ServerLog.Row], _ candidates: [Int],
+                              _ used: Set<Int>) -> Int? {
         let start = time - windowBefore, end = time + windowAfter
         var low = 0, high = candidates.count
         while low < high {
             let middle = (low + high) / 2
             if server[candidates[middle]].time < start { low = middle + 1 } else { high = middle }
         }
-        var position = low
+        var position = low, lowest: Int?
         while position < candidates.count, server[candidates[position]].time <= end {
-            if !used.contains(candidates[position]) { return candidates[position] }
+            let index = candidates[position]
+            if !used.contains(index) {
+                if fcnt.isEmpty { return index }
+                if server[index].fcnt == fcnt { return index }
+                lowest = lowest ?? index
+            }
             position += 1
         }
-        return nil
+        return lowest
     }
 
     // MARK: Python-compatible CSV and time

@@ -12,18 +12,21 @@ enum DeviceKind: Equatable {
         case deviceTones
         /// Several screens on the device display, switchable from the app.
         case screens
+        /// GNSS receiver in standby between uplinks.
+        case gnssSleep
     }
 
     private static let prefixes: [(String, DeviceKind)] = [("FieldTester-", .core2), ("FieldTracker-", .tracker)]
 
     /// What a kind lacks. Unknown devices get everything, a rejected write shows up as an error.
     private static let missing: [DeviceKind: Set<Feature>] = [
-        .tracker: [.wifiUpload, .deviceTones, .screens],
+        .tracker: [.wifiUpload, .deviceTones, .screens, .gnssSleep],
     ]
 
     private static let configIDs: [Feature: Set<ConfigID>] = [
         .wifiUpload: [.uploadOnBoot, .wifiName, .wifiPassword, .server, .uploadToken],
         .deviceTones: [.signalTones],
+        .gnssSleep: [.gnssStandby],
     ]
 
     /// Archive rows from before device tags came from the Core2, the only tester back then.

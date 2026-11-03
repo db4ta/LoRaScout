@@ -70,7 +70,8 @@ enum FieldLog {
         var rows: [FieldLogRow] = []
         for (index, line) in lines.enumerated() {
             let f = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
-            guard f.count == 7, f[0] != "Time_UTC" else { continue }
+            // The tracker appends diagnostic columns after the seven the Core2 writes.
+            guard f.count >= 7, f[0] != "Time_UTC" else { continue }
             rows.append(FieldLogRow(id: index, time: f[0], lat: Double(f[1]), lng: Double(f[2]), alt: Double(f[3]),
                                     rssi: Int(f[4]), snr: Int(f[5]), status: LogStatus(f[6])))
         }

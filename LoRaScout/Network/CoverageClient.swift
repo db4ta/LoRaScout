@@ -143,9 +143,12 @@ enum CoverageClient {
         return (data, counts)
     }
 
-    /// One coverage file with the DevEUI appended to every row of its answer.
+    /// One coverage file with the DevEUI as tenth column of every row of its answer. The server's
+    /// receiving gateways (`via=1`, tenth column there) move behind it, so they end up eleventh.
     static func tagged(_ parts: [(devEUI: String, data: Data)]) -> Data {
-        let lines = parts.flatMap { part in CoverageMerge.parseCSV(part.data).map { $0 + [part.devEUI] } }
+        let lines = parts.flatMap { part in
+            CoverageMerge.parseCSV(part.data).map { Array($0.prefix(9)) + [part.devEUI] + $0.dropFirst(9) }
+        }
         return Data(lines.map { $0.map { CoverageMerge.quoted($0) }.joined(separator: ",") + "\n" }.joined().utf8)
     }
 
@@ -169,7 +172,8 @@ enum CoverageClient {
     private static func send(_ endpoint: ServerEndpoint, path: String, device: String? = nil, method: String, token: String) async throws -> Data {
         // The ioBroker script compares the whole URL, so never a query for it.
         var url = endpoint.base.appending(path: path)
-        if let device { url.append(queryItems: [URLQueryItem(name: "device", value: device)]) }
+        // via=1: the LoRaScout server adds the receiving gateways, older versions ignore it.
+        if let device { url.append(queryItems: [URLQueryItem(name: "device", value: device), URLQueryItem(name: "via", value: "1")]) }
         let (status, data) = try await request(url, method: method, token: token, port: endpoint.port, timeout: 10)
         switch status {
         case 200: return data
